@@ -22,7 +22,7 @@ class PipelineExecutor:
 
     Unlike domain-specific executors, this generic executor has NO hardcoded stages.
     All stages must be provided via:
-    1. YAML pipeline definition (pipeline_name + stage_registry)
+    1. YAML pipeline definition (pipeline_name + stage_registry or entry points)
     2. Explicit stage list passed to constructor
     3. Domain-specific subclass that calls _set_stages()
 
@@ -34,7 +34,15 @@ class PipelineExecutor:
         ])
         output_path = executor.execute()
 
-    Example usage with YAML pipeline:
+    Example usage with YAML pipeline and entry points:
+        executor = PipelineExecutor(
+            context, config,
+            pipeline_name="my_pipeline",
+            use_global_registry=True,  # Uses sycore.stages entry points
+        )
+        output_path = executor.execute()
+
+    Example usage with explicit stage registry:
         executor = PipelineExecutor(
             context, config,
             pipeline_name="my_pipeline",
@@ -52,6 +60,7 @@ class PipelineExecutor:
         pipeline_name: str | None = None,
         stages: list[PipelineStage] | None = None,
         stage_registry: dict[str, type[PipelineStage]] | None = None,
+        use_global_registry: bool = True,
     ):
         """Initialize the pipeline executor.
 
@@ -63,6 +72,7 @@ class PipelineExecutor:
             pipeline_name: Name of YAML pipeline to load.
             stages: Explicit list of stage instances.
             stage_registry: Mapping of stage class names to classes (for YAML loading).
+            use_global_registry: Whether to use global StageRegistry (entry points).
         """
         self.context = context
         self.config = config
@@ -72,6 +82,7 @@ class PipelineExecutor:
         self.pipeline_name = pipeline_name
         self.pipeline_definition: PipelineDefinition | None = None
         self._stage_registry = stage_registry or {}
+        self._use_global_registry = use_global_registry
 
         # Initialize from YAML if pipeline_name specified and no stages provided
         if pipeline_name and not stages:
@@ -102,6 +113,35 @@ class PipelineExecutor:
         """
         self.stages = stages
 
+    def _get_stage_class(self, stage_class_name: str) -> type[PipelineStage] | None:
+        """Get a stage class by name.
+
+        Lookup order:
+        1. Local stage_registry (explicit registration)
+        2. Global StageRegistry (entry points) if use_global_registry is True
+        3. Module path format (package.module:ClassName)
+
+        Args:
+            stage_class_name: Stage class name or module path.
+
+        Returns:
+            Stage class or None if not found.
+        """
+        # 1. Check local registry first
+        if stage_class_name in self._stage_registry:
+            return self._stage_registry[stage_class_name]
+
+        # 2. Check global registry (entry points)
+        if self._use_global_registry:
+            from sycore.pipeline.registry import get_stage_registry
+
+            global_registry = get_stage_registry()
+            stage_cls = global_registry.get(stage_class_name)
+            if stage_cls is not None:
+                return stage_cls
+
+        return None
+
     def _initialize_from_yaml(self) -> None:
         """Initialize stages from YAML pipeline definition."""
         from sycore.pipeline.loader import get_pipeline_loader
@@ -116,11 +156,11 @@ class PipelineExecutor:
                 logger.debug(f"Skipping disabled stage: {stage_def.name}")
                 continue
 
-            stage_cls = self._stage_registry.get(stage_def.stage_class)
+            stage_cls = self._get_stage_class(stage_def.stage_class)
             if stage_cls is None:
                 logger.warning(
                     f"Unknown stage class: {stage_def.stage_class}. "
-                    f"Register it with register_stage_class() first."
+                    f"Register it via entry points or register_stage_class()."
                 )
                 continue
 

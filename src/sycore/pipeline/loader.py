@@ -10,13 +10,45 @@ import yaml
 
 
 @dataclass
+class AgentConfig:
+    """Agent configuration for a pipeline stage.
+
+    Allows overriding agent settings per-stage in the pipeline YAML.
+
+    Example YAML:
+        stages:
+          - name: Planning
+            stage_class: planning
+            agent:
+              name: planner
+              model_override: claude-opus-4-5-20251101
+              provider_override: anthropic
+    """
+
+    name: str
+    model_override: str | None = None
+    provider_override: str | None = None
+    parameters: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class StageDefinition:
-    """Definition of a pipeline stage."""
+    """Definition of a pipeline stage.
+
+    Attributes:
+        name: Human-readable stage name.
+        stage_class: Stage class name (entry point name or module:ClassName).
+        enabled: Whether this stage is enabled.
+        required: Whether pipeline should fail if this stage fails.
+        agent: Optional agent configuration override.
+        config: Stage-specific configuration.
+    """
 
     name: str
     stage_class: str
     enabled: bool = True
     required: bool = True
+    agent: AgentConfig | None = None
     config: dict[str, Any] = field(default_factory=dict)
 
 
@@ -138,14 +170,28 @@ class PipelineLoader:
                     # Use explicit class, or mapping, or name as fallback
                     stage_class = str(
                         stage_data.get("class")
+                        or stage_data.get("stage_class")
                         or self._stage_class_mapping.get(stage_name, stage_name)
                     )
+
+                    # Parse agent config if present
+                    agent_config = None
+                    agent_data = stage_data.get("agent")
+                    if agent_data and isinstance(agent_data, dict):
+                        agent_config = AgentConfig(
+                            name=agent_data.get("name", stage_name),
+                            model_override=agent_data.get("model_override"),
+                            provider_override=agent_data.get("provider_override"),
+                            parameters=agent_data.get("parameters", {}),
+                        )
+
                     stages.append(
                         StageDefinition(
                             name=stage_name,
                             stage_class=stage_class,
                             enabled=stage_data.get("enabled", True),
                             required=stage_data.get("required", True),
+                            agent=agent_config,
                             config=stage_data.get("config", {}),
                         )
                     )
