@@ -75,11 +75,19 @@ class DynamicAgent(Agent):
         # Set skill names for tool loading
         self.skill_names = definition.skills
 
-        # Override model if specified in definition
+        # Override model and provider if specified in definition
         if definition.model:
+            inferred_provider = definition.get_provider()
+            # Need to pick the right API key based on provider
+            # If provider changes, we need the appropriate API key from metadata
+            api_key = context.api_key
+            if inferred_provider != context.provider:
+                # Try to get provider-specific API key from metadata
+                api_key = context.metadata.get(f"{inferred_provider}_api_key", api_key)
+
             context = AgentContext(
-                provider=context.provider,
-                api_key=context.api_key,
+                provider=inferred_provider,  # type: ignore[arg-type]
+                api_key=api_key,
                 model=definition.model,
                 output_dir=context.output_dir,
                 on_progress=context.on_progress,

@@ -18,9 +18,32 @@ class AgentDefinition:
     prompt_name: str
     skills: list[str] = field(default_factory=list)
     model: str = ""
+    provider: str = ""  # anthropic, openai, google, ollama - inferred from model if empty
     version: str = "1.0"
     category: str = "general"
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def get_provider(self) -> str:
+        """Get provider, inferring from model name if not explicitly set.
+
+        Returns:
+            Provider string (anthropic, openai, google, ollama).
+        """
+        if self.provider:
+            return self.provider
+
+        # Infer from model name
+        model_lower = self.model.lower()
+        if any(x in model_lower for x in ["claude", "haiku", "sonnet", "opus"]):
+            return "anthropic"
+        elif any(x in model_lower for x in ["gpt", "o1", "davinci", "dall-e"]):
+            return "openai"
+        elif any(x in model_lower for x in ["gemini", "palm"]):
+            return "google"
+        elif any(x in model_lower for x in ["llama", "mistral", "mixtral", "qwen"]):
+            return "ollama"
+
+        return "anthropic"  # Default fallback
 
 
 class AgentFactory:
@@ -107,6 +130,7 @@ class AgentFactory:
                 prompt_name=data.get("prompt", name),
                 skills=data.get("skills", []),
                 model=data.get("model", ""),
+                provider=data.get("provider", ""),
                 version=data.get("version", "1.0"),
                 category=data.get("category", "general"),
                 metadata=data,
