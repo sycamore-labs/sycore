@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -176,9 +179,12 @@ class Agent(ABC):
 
     def _call_anthropic(self, messages: list[dict[str, str]], use_tools: bool) -> str:
         """Call Anthropic API."""
+        # Get max_tokens from parameters if available
+        max_tokens = getattr(self, '_parameters', {}).get('max_tokens', 4096)
+        logger.debug(f"_call_anthropic: max_tokens={max_tokens}, model={self.context.model}")
         kwargs: dict[str, Any] = {
             "model": self.context.model,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
             "system": self.system_prompt,
             "messages": messages,
         }
@@ -210,11 +216,23 @@ class Agent(ABC):
 
             response = self.client.messages.create(**kwargs | {"messages": all_messages})
 
+        # Log response info
+        logger.debug(
+            f"Anthropic response: stop_reason={response.stop_reason}, "
+            f"output_tokens={response.usage.output_tokens}"
+        )
+
         # Extract text response
         for block in response.content:
             if hasattr(block, "text"):
                 return block.text
 
+        # Log if no text found
+        logger.warning(
+            f"No text block in Anthropic response. "
+            f"Stop reason: {response.stop_reason}, "
+            f"Content types: {[type(b).__name__ for b in response.content]}"
+        )
         return ""
 
     def _call_openai(self, messages: list[dict[str, str]], use_tools: bool) -> str:
