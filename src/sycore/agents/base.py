@@ -179,9 +179,8 @@ class Agent(ABC):
 
     def _call_anthropic(self, messages: list[dict[str, str]], use_tools: bool) -> str:
         """Call Anthropic API."""
-        # Get max_tokens from parameters if available
+        # Get max_tokens from parameters if available (set by DynamicAgent)
         max_tokens = getattr(self, '_parameters', {}).get('max_tokens', 4096)
-        logger.debug(f"_call_anthropic: max_tokens={max_tokens}, model={self.context.model}")
         kwargs: dict[str, Any] = {
             "model": self.context.model,
             "max_tokens": max_tokens,
@@ -215,12 +214,6 @@ class Agent(ABC):
             ]
 
             response = self.client.messages.create(**kwargs | {"messages": all_messages})
-
-        # Log response info
-        logger.debug(
-            f"Anthropic response: stop_reason={response.stop_reason}, "
-            f"output_tokens={response.usage.output_tokens}"
-        )
 
         # Extract text response
         for block in response.content:
